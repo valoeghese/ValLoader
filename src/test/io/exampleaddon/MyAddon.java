@@ -1,4 +1,4 @@
-package io.exampleaddon;
+package test.io.exampleaddon;
 
 import tk.valoeghese.loader.Loader;
 import tk.valoeghese.loader.api.Addon;

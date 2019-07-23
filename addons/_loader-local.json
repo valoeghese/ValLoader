@@ -1,5 +1,5 @@
 {
   "entrypoints": [
-    "io.exampleaddon.MyAddon"
+    "test.io.exampleaddon.MyAddon"
   ]
 }
