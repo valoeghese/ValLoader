@@ -1,0 +1,9 @@
+lib/
+
+# eclipse
+
+bin/
+.settings
+*.launch
+.classpath
+.project
