@@ -33,7 +33,9 @@ public class MyAddon{
 				.build());
 		
 		log.info("Posting custom event");
-		Loader.getMostRecentInstance().postEvent("myEvent", event);
+		Loader.getMostRecentInstance().postEvent(event);
+		
+		Loader.getMostRecentInstance().postEventToConfirmedSubscribers(event);
 	}
 	
 	public void myEvent(AddonEvents.BuiltEvent e) {

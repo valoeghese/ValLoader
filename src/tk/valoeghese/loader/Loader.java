@@ -16,8 +16,8 @@ import com.google.gson.Gson;
 
 import tk.valoeghese.loader.api.Addon;
 import tk.valoeghese.loader.api.AddonEvents;
-import tk.valoeghese.loader.api.AddonEvents.BuiltEvent;
 import tk.valoeghese.loader.api.AddonEvents.BuiltEventType;
+import tk.valoeghese.loader.api.EventType;
 import tk.valoeghese.loader.utils.FunctionalUtils;
 import tk.valoeghese.loader.utils.Wrapper;
 import tk.valoeghese.log.Logger;
@@ -27,19 +27,19 @@ public class Loader {
 	private final File addonsFolder;
 	private static final Gson gson = new Gson();
 	private LocalJsonAddonWrapper localEntryPoints;
-	
+
 	private final Map<String, JarLoader> addons = new HashMap<>();
-	private final Map<String, BuiltEventType> events = new HashMap<>();
+	private final Map<String, EventType> events = new HashMap<>();
 	private final List<Object> entrypointObjects = new ArrayList<>();
 	private final Map<String, List<Object>> eventSubscribers = new HashMap<>();
 	private final List<Addon> addonAnnotations = new ArrayList<>();
-	
+
 	private static Loader recentInstance = null;
-	
+
 	public static Loader getMostRecentInstance() {
 		return recentInstance;
 	}
-	
+
 	public Loader() {
 		log = new Logger("ValLoader").setDebug(true);
 		log.debug("Created Loader Successfully.");
@@ -50,39 +50,51 @@ public class Loader {
 		} else {
 			log.debug("Created addons folder.");
 		}
-		
+
 		recentInstance = this;
 	}
-	
-	public void registerEvent(BuiltEventType event) {
+
+	public void registerEvent(EventType event) {
 		events.put(event.getIdentifier(), event);
 	}
-	
+
 	public boolean eventExists(String eventName) {
 		return events.containsKey(eventName);
 	}
-	
+
 	public boolean eventHasConfirmedSubscribers(String eventName) {
 		return eventSubscribers.containsKey(eventName);
 	}
-	
+
 	/**
-	 * @throws NullPointerException if the BuilderEvent does not currently exist
+	 * @return null if the EventType is not a BuiltEventType, otherwise the BuiltEventType
+	 * @throws NullPointerException if the EventType does not currently exist
 	 */
 	public BuiltEventType getBuilderEvent(String name) throws NullPointerException {
-		return events.get(name);
+		EventType result =  events.get(name);
+		
+		if (result instanceof BuiltEventType) {
+			return (BuiltEventType) result;
+		} else {
+			return null;
+		}
 	}
 	
-	public void postEvent(String eventName, BuiltEvent event) {
+	public EventType getEventType(String name) throws NullPointerException {
+		return events.get(name);
+	}
+
+	public void postEvent(AddonEvents event) {
+		String eventName = event.getIdKey();
 		if (events.containsKey(eventName)) { // does event exist and is it registered
 			entrypointObjects.forEach(obj -> {
 				try {
-					Method m = obj.getClass().getMethod(eventName, BuiltEvent.class);
+					Method m = obj.getClass().getMethod(eventName, event.getClass());
 					m.invoke(obj, event);
-					
-					eventSubscribers.computeIfAbsent(eventName, name -> new ArrayList<>()).add(event); // add to subs for event if successful
+
+					eventSubscribers.computeIfAbsent(eventName, name -> new ArrayList<>()).add(obj); // add to subs for event if successful
 				} catch (NoSuchMethodException e) {
-					
+
 				} catch (SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
 					log.debug("Exception in executing an event:");
 					if (log.isDebug()) {
@@ -93,22 +105,29 @@ public class Loader {
 		}
 	}
 	
-	public void postEventToConfirmedSubscribers(String eventName, BuiltEvent event) {
+	/**
+	 * Post event to confirmed subscribers thereof.<br/>An event has confirmed subscribers if it has been posted before via the postEvent() method.
+	 */
+	public <T extends AddonEvents> void postEventToConfirmedSubscribers(T event) {
+		String eventName = event.getIdKey();
+		
 		if (eventSubscribers.containsKey(eventName)) { // does event have confirmed subscribers
 			eventSubscribers.get(eventName).forEach(obj -> {
 				try {
-					Method m = obj.getClass().getMethod(eventName, BuiltEvent.class);
+					Method m = obj.getClass().getMethod(eventName, event.getClass());
 					m.invoke(obj, event);
 				} catch (NoSuchMethodException e) {
-					log.debug("Confirmed Subscriber does not have event method: " + eventName);
+					log.warn("A confirmed subscriber does not have event method: " + eventName);
 				} catch (SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
 					log.debug("Exception in executing an event:");
-					log.debug(e.toString());
+					if (log.isDebug()) {
+						e.printStackTrace();
+					}
 				}
 			});
 		}
 	}
-	
+
 	Loader loadAllExternalAddons() {
 		File[] jars = this.findAllJars();
 		FunctionalUtils.forEachItem(jars, file -> {
@@ -122,16 +141,16 @@ public class Loader {
 				log.debugAll("MalformedUrl: ", e.toString(), " , Skipping file");
 			}
 		});
-		
+
 		return this;
 	}
-	
+
 	Loader postInitialize() {
 		entrypointObjects.forEach(obj -> {
 			try {
 				Method m = obj.getClass().getMethod("onPostInit", AddonEvents.PostInit.class);
 				m.invoke(obj, new AddonEvents.PostInit(getAllAddonIds()));
-				
+
 			} catch (NoSuchMethodException e) {
 				log.debug(obj.getClass().getName() + " has no postInit method.");
 			} catch (SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
@@ -143,13 +162,13 @@ public class Loader {
 		});
 		return this;
 	}
-	
+
 	private List<String> getAllAddonIds() {
 		List<String> returns = new ArrayList<>();
 		addonAnnotations.forEach(annotation -> returns.add(annotation.id()));
 		return returns;
 	}
-	
+
 	private File[] findAllJars() {
 		return addonsFolder.listFiles(new FilenameFilter() {
 			@Override public boolean accept(File dir, String name) {
@@ -157,10 +176,10 @@ public class Loader {
 			}
 		});
 	}
-	
+
 	private boolean loadAddonsFor(String jsonFile, JarLoader jarLoader) {
 		final Wrapper<Boolean> isSuccessful = Wrapper.wrap(false); // Lambda needs this to be final in an enclosing scope. Thus we use a wrapper with getters/setters.
-		
+
 		try (FileReader reader = new FileReader(jsonFile))
 		{
 			if (jarLoader == null) {
@@ -179,10 +198,10 @@ public class Loader {
 		{
 			e.printStackTrace();
 		}
-		
+
 		return isSuccessful.getT();
 	}
-	
+
 	private void initializeAddon(String item, Wrapper<Boolean> resultWrapper, JarLoader jarLoader, String jsonFile) {
 		log.debug("Attempting to load addon entry " + item);
 		try {
@@ -202,12 +221,12 @@ public class Loader {
 				try {
 					Object newClazzInstance = clazz.newInstance();
 					entrypointObjects.add(newClazzInstance); // Add loaded class instance to the list of entrypointObjects
-					
+
 					Method m = clazz.getMethod("onInit", AddonEvents.Init.class);
 					FunctionalUtils.accept(clazz.getAnnotation(Addon.class), annotation -> {
 						log.debugAll("Initializing addon ", annotation.name());
 					});
-					
+
 					m.invoke(newClazzInstance, new AddonEvents.Init(clazz.getAnnotation(Addon.class).name(), this));
 				} catch (NoSuchMethodException e) {
 					log.debug("No init method found");
@@ -223,7 +242,7 @@ public class Loader {
 			e.printStackTrace();
 		}
 	}
-	
+
 	Loader loadLocalAddons() {
 		this.loadAddonsFor(addonsFolder.getAbsolutePath() + "/_loader-local.json", null);
 		return this;
@@ -232,7 +251,7 @@ public class Loader {
 	public static class LocalJsonAddonWrapper {
 		public String[] entrypoints;
 	}
-	
+
 	public static class ExternalJsonAddonWrapper {
 		public String entrypoint;
 	}

@@ -94,7 +94,7 @@ public abstract class AddonEvents {
 			return items;
 		}
 	}
-	public static final class BuiltEventType {
+	public static final class BuiltEventType implements EventType {
 		private BuiltEventType(String methodIdentifier, final Map<String, Class<?>> properties) {
 			identifier = methodIdentifier;
 			this.properties = properties;
@@ -103,6 +103,7 @@ public abstract class AddonEvents {
 		private final Map<String, Class<?>> properties;
 		private final String identifier;
 		
+		@Override
 		public String getIdentifier() {
 			return identifier;
 		}
